@@ -1,12 +1,20 @@
-# -----------------------------------------------------------
-# pyRadioOCR
+# -------------------------------------------------------------
+# pyRadioOCR v0.8a
 #
 # https://youtu.be/FJd5-t7Id1A
 #
 # (C) 2023 Pablo Sabbag, VA3HDL
 # Released under GNU Public License (GPL)
+# 
+# To-do:
+# option to save settings to config.ini from app
+# enumerate video capture devices
+# enumerate video capture devices capabilities
 #
-# -----------------------------------------------------------
+# Changelog:
+# 2023-01-29 Added: Voice support, GUI, and user settings 
+#            on the config.ini file
+# -------------------------------------------------------------
 
 """
 00. CAP_PROP_POS_MSEC Current position of the video file in milliseconds.
@@ -29,16 +37,19 @@
 17. CAP_PROP_WHITE_BALANCE Currently unsupported
 18. CAP_PROP_RECTIFICATION Rectification flag for stereo cameras (note: only supported by DC1394 v 2.x backend currently)
 """
-
-import numpy as np
+from tkinter import *
+from PIL import Image, ImageTk
 import cv2
+import numpy as np
 import pytesseract
 from pytesseract import Output
 import socket
 import uuid
 import pyttsx3
+import configparser
 
-snd2com = False
+# Networking ------------------------------------------------------------------------------------------
+
 def send2commander(command1="",command2="",value=""): # command1=CmdSetFreq command2=xcvrfreq value=21230.55
     # Example freq only <command:10>CmdSetFreq<parameters:20><xcvrfreq:8>21230.55
     # Freq and mode combo <command:14>CmdSetFreqMode<parameters:56><xcvrfreq:5>14080<xcvrmode:4>RTTY
@@ -64,7 +75,6 @@ def send2commander(command1="",command2="",value=""): # command1=CmdSetFreq comm
 #send2commander( "CmdSetFreq", "xcvrfreq", "14347.12")
 #send2commander( "CmdSetMode", "1", "USB")
 
-snd2log = False
 def send2log4om(command1="",value=""): 
     # <RemoteControlRequest> 
     #  <MessageId>C0FC027F-D09E-49F5-9CA6-33A11E05A053</MessageId> 
@@ -84,30 +94,38 @@ def send2log4om(command1="",value=""):
 #send2log4om( "SetTxFrequency", "<Frequency>14333222</Frequency>")
 #send2log4om( "SetMode", "<Mode>USB</Mode>")
 
+# /Networking  ------------------------------------------------------------------------------------------
+
 def checkFreq(Frequency=0.0):
     #print(Frequency)
     if Frequency > 1799.99 and Frequency < 2000:
-        return True, "160", "LSB"
+        return True, "160m", "LSB"
     elif Frequency > 3499.99 and Frequency < 4000:
-        return True, "80", "LSB"
+        return True, "80m", "LSB"
     elif Frequency > 5331.99 and Frequency < 5405.1:   # 60m channels 5,332 kHz, 5,348 kHz, 5,358.5 kHz, 5,373 kHz and 5,405 kHz.
-        return True, "60", "USB"
+        return True, "60m", "USB"
     elif Frequency > 6999.99 and Frequency < 7300:
-        return True, "40", "LSB"
+        return True, "40m", "LSB"
     elif Frequency > 9999.99 and Frequency < 10300:
-        return True, "30", "CW"
+        return True, "30m", "CW"
     elif Frequency > 13999.99 and Frequency < 14350:
-        return True, "20", "USB"
+        return True, "20m", "USB"
     elif Frequency > 17999.99 and Frequency < 18600:
-        return True, "17", "USB"
+        return True, "17m", "USB"
     elif Frequency > 20999.99 and Frequency < 21450:
-        return True, "15", "USB"
+        return True, "15m", "USB"
     elif Frequency > 24889.99 and Frequency < 24990:
-        return True, "12", "USB"
+        return True, "12m", "USB"
     elif Frequency > 27999.99 and Frequency < 29600:
-        return True, "10", "USB"
+        return True, "10m", "USB"
     elif Frequency > 29599.99 and Frequency < 29700:
-        return True, "10", "FM"
+        return True, "10m", "FM"
+    elif Frequency > 49999.99 and Frequency < 54000:
+        return True, "6m", "FM"
+    elif Frequency > 143999.99 and Frequency < 148000:
+        return True, "2m", "FM"
+    elif Frequency > 429999.99 and Frequency < 460000:
+        return True, "70cm", "FM"
     else:         
         return False, "", ""
 
@@ -123,57 +141,139 @@ def increase_brightness(img, value=30):
     img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
     return img
 
-voice = False
-if voice:
-    # Initialize the Voice engine
-    synthesizer = pyttsx3.init()
-    synthesizer.setProperty('volume', 1)
-    synthesizer.setProperty('rate', 125)
-    synthesizer.say("Welcome to py Radio O C R") 
+# Read the configuration
+config = configparser.ConfigParser()
+config.read("./config.ini")
+
+# Initialize the Voice engine
+synthesizer = pyttsx3.init()
+synthesizer.setProperty("volume", config.getfloat("VOICE","volume"))
+synthesizer.setProperty("rate", config.getint("VOICE","rate"))
+if config.getboolean("VOICE","enabled"):
+    synthesizer.say(config["VOICE"]["welcome"]) 
     synthesizer.runAndWait() 
     synthesizer.stop()
 
-# Initialize the webcam
-cap = cv2.VideoCapture(0)    # 0=Logitech // 2=Wyze
+# Initialize the GUI ------------------------------------------------------------------------------------------
+root = Tk()
+root.geometry("900x700")
+root.title("pyRadioOCR v0.8a by VA3HDL")
 
-# set the camera values
-cap.set( 3, 640)
-cap.set( 4, 480)
-#cap.set(cv2.CAP_PROP_FPS, 1)
-cap.set(cv2.CAP_PROP_BRIGHTNESS, 1)   # Works only with Logitech
-cap.set(cv2.CAP_PROP_EXPOSURE, -4.0)   # Works only with Logitech
+right_frame = Frame(root,  width=200,  height=480,  bg='grey')
+right_frame.pack(side='right',  fill='both',  padx=10,  pady=5,  expand=True, anchor=E)
 
-# initialize variables
-counter = 0
-numbers = ""
-new_numbers = ""
+# Create a canvas to display the video feed
+canvas = Canvas(root, width=640, height=480, bg='black')
+canvas.pack(side='top', expand=True, anchor=NW)
 
-new_band = ""
-new_mode = ""
+left_frame = Frame(root,  width=200,  height=400,  bg='grey')
+left_frame.pack(side='left',  fill='both',  padx=10,  pady=5,  expand=True)
 
-y1 =None
-maxX = 0
-# scale_percent = 200 # percent of original size    FT-757GX setting
-scale_percent = 250 # percent of original size      TS-930S setting with Wyze cam
-threshold = 255 # initial threshold        
+def on_select(v):    
+    print(v)
+    if not debugMode.get():
+        cv2.destroyWindow("Webcam")
+        cv2.destroyWindow("Gray")
+        cv2.destroyWindow("Thresh")
+        cv2.destroyWindow('ROI')
+        cv2.destroyWindow("Resized")
 
-oldthresh = None
-percentage = 1
-autoROI = False
-ROIset = False
+# Checkboxes
+snd2com = BooleanVar()
+snd2com.set(config.getboolean("INTEGRATION","commander"))
+c1 = Checkbutton(left_frame, text="Commander", variable=snd2com, command=lambda: on_select(snd2com.get()))
+c1.pack(anchor=NW)
 
-# create white canvass
-whitebkg = np.zeros([200,300],dtype=np.uint8)
+snd2log = BooleanVar()
+snd2log.set(config.getboolean("INTEGRATION","log4om"))
+c2 = Checkbutton(left_frame, text="Log4OM", variable=snd2log, command=lambda: on_select(snd2log.get()))
+c2.pack(anchor=NW)
 
-#cv2.imshow('Single Channel Window', whitebkg)
+voice = BooleanVar()
+voice.set(config.getboolean("VOICE","enabled"))
+c3 = Checkbutton(left_frame, text="Voice", variable=voice, command=lambda: on_select(voice.get()))
+c3.pack(anchor=NW)
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-#pytesseract.pytesseract.environ = ".\\"
+autoROI = BooleanVar()
+autoROI.set(config.getboolean("PREPROCESS","autoROI"))
+c4 = Checkbutton(left_frame, text="Auto ROI", variable=autoROI, command=lambda: on_select(autoROI.get()))
+c4.pack(anchor=NW)
 
-# this is the real thing
-while True:
-    # Capture an image from the webcam
-    ret, img = cap.read()
+invert = BooleanVar()
+invert.set(config.getboolean("PREPROCESS","invert"))
+c5 = Checkbutton(left_frame, text="Invert", variable=invert, command=lambda: on_select(invert.get()))
+c5.pack(anchor=NW)
+
+noDecimal = BooleanVar()
+noDecimal.set(config.getboolean("POSTPROCESS","noDecimal"))
+c6 = Checkbutton(left_frame, text="No decimals", variable=noDecimal, command=lambda: on_select(noDecimal.get()))
+c6.pack(anchor=NW)
+
+debugMode = BooleanVar()
+debugMode.set(config.getboolean("OCR","debug"))
+c7 = Checkbutton(left_frame, text="Debug mode", variable=debugMode, command=lambda: on_select(debugMode.get()))
+c7.pack(anchor=NW)
+
+# Sliders
+brightCam = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal', label="Cam Brightness")
+brightCam.pack(anchor=NE)
+brightCam.set(config["CAMERA"]['brightness'])
+
+exposureSet = Scale(right_frame, from_=0, to=-14, length=200, orient='horizontal', label="Exposure")
+exposureSet.pack(anchor=NE)
+exposureSet.set(config["CAMERA"]['exposure'])
+
+slantSet = Scale(right_frame, from_= 0.0, to= 1.0, digits = 3, resolution = 0.01, length=200, orient='horizontal', label="Slant %")
+slantSet.pack(anchor=NE)
+slantSet.set(config["PREPROCESS"]['slant'])
+
+threshSet = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal', label="Threshold")
+threshSet.pack(anchor=NE)
+threshSet.set(config["PREPROCESS"]['threshold'])
+
+brightSet = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal', label="Preproc Brightness")
+brightSet.pack(anchor=NE)
+brightSet.set(config["PREPROCESS"]['brightness'])
+
+scaleSet = Scale(right_frame, from_=0, to=500, length=200, orient='horizontal', label="Scale %")
+scaleSet.pack(anchor=NE)
+scaleSet.set(config["PREPROCESS"]['scale'])
+
+# /GUI ------------------------------------------------------------------------------------------
+
+# Main code loop---------------------------------------------------------------------------------
+def update():
+    # Global variables
+    global counter
+    global numbers
+    global new_numbers
+    global new_band
+    global new_mode
+    global y1
+    global maxX
+    global threshold
+    global oldthresh
+    global percentage
+    global autoROI
+    global ROIset
+    global ready2set
+    global whitebkg    
+    global custom_oem
+    global minX
+    global maxX
+    global minY
+    global maxY
+    global y1
+    global y2
+    global x1
+    global x2
+
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, brightCam.get())    
+    cap.set(cv2.CAP_PROP_EXPOSURE, exposureSet.get())
+
+    frame = cap.read()[1]
+    # OCR code  ------------------------------------------------------------------------------------------
+    img = frame
     height, width, _ = img.shape
 
     img = img[200:height-200, 250:width-200]    # 640 x 480 settings Logitech for FT-757GX    
@@ -181,7 +281,9 @@ while True:
     #img = img[150:height-150, 300:width-150]    # 640 x 480 settings Wyze
     #img = img[125:height-125, 200:width-300]    # 640 x 480 settings Wyze mounted from the arm beside the radio    
     #img = img[160:height-100, 200:width-100]    # 320 x 200 settings Wyze
-    cv2.imshow("Webcam", img)
+
+    if debugMode.get():
+        cv2.imshow("Webcam", img)
 
     #src = img
     #src[:,:,2] = np.zeros([img.shape[0], img.shape[1]])    
@@ -189,26 +291,26 @@ while True:
     # Affine top to left
     rows, cols, ch = img.shape
     src_points = np.float32([[0,0], [cols-1,0], [0,rows-1]])
-    #dst_points = np.float32([[0,0], [int(0.97*(cols-1)),0], [int(0.03*(cols-1)),rows-1]])     # FT-757GX
-    dst_points = np.float32([[0,0], [int(0.92*(cols-1)),0], [int(0.08*(cols-1)),rows-1]])     # TS-930S
+    #dst_points = np.float32([[0,0], [int(0.97*(cols-1)),0], [int(0.03*(cols-1)),rows-1]])     # FT-757GX    
+    dst_points = np.float32([[0,0], [int(slantSet.get()*(cols-1)),0], [int((1-slantSet.get())*(cols-1)),rows-1]])     # TS-930S
     matrix = cv2.getAffineTransform(src_points, dst_points)
     dst = cv2.warpAffine(img, matrix, (cols,rows))
 
     # Erode
     kernel = np.ones((1, 1), np.uint8)
     img2 = dst # cv2.erode(dst, kernel, iterations=2)
-
+    
+    # Blur
     # img2 = cv2.GaussianBlur(img, (1,1), 5)
     
     # resize image
-    width = int(img2.shape[1] * scale_percent / 100)
-    height = int(img2.shape[0] * scale_percent / 100)
+    width = int(img2.shape[1] * scaleSet.get() / 100)
+    height = int(img2.shape[0] * scaleSet.get() / 100)
     dim = (width, height)    
     resized = cv2.resize(img2, dim, interpolation = cv2.INTER_AREA)
 
-    if not autoROI and not ROIset:
-        height, width, _ = resized.shape
-        # img = img[125:height-125, 200:width-300]    # 640 x 480 settings Wyze mounted from the arm beside the radio
+    if not autoROI.get() and not ROIset and ready2set:
+        height, width, _ = resized.shape       
     
         # Select ROI
         r = cv2.selectROI("Select the ROI area", resized)
@@ -219,19 +321,24 @@ while True:
         x2 = int(r[0]+r[2])                
 
         # Display cropped image
-        cv2.imshow("Cropped image", resized[y1:y2,x1:x2])        
+        cv2.imshow("Cropped image", resized[y1:y2,x1:x2])
+        cv2.destroyWindow("Select the ROI area")
 
-        ROIset = True        
-    
+        ready2set = False
+        ROIset = True
+
     # brightness
-    # resized = increase_brightness(resized, value=35)                 # Setting for TS-930S and Wyze
+    resized = increase_brightness(resized, value=brightSet.get())                 # Setting for TS-930S and Wyze
 
     # Convert the image to grayscale
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     gray = cv2.blur(gray, (2,2))    
 
     # threshold grayscale image to extract glare
-    thresh = cv2.threshold(gray, 120, 255, cv2.THRESH_BINARY_INV)[1]         # Setting for FT-757GX and Logitech
+    if invert.get():
+        thresh = cv2.threshold(gray, threshSet.get(), 255, cv2.THRESH_BINARY_INV)[1]         # Setting for FT-757GX and Logitech
+    else:
+        thresh = cv2.threshold(gray, threshSet.get(), 255, cv2.THRESH_BINARY)[1]
     
     # thresh = cv2.threshold(gray, 170, 255, cv2.THRESH_BINARY_INV)[1]         # Setting for TS-930S and Wyze 
 
@@ -243,7 +350,8 @@ while True:
 
         #--- find percentage difference based on number of pixels that are not zero ---
         percentage = (np.count_nonzero(res) * 100)/ res.size
-        print( "Diff in frame: ", percentage)
+        if debugMode.get():
+            print( "Diff in frame: ", percentage)
 
     oldthresh = thresh   
 
@@ -267,7 +375,7 @@ while True:
     
     drawing = np.zeros((canny_output.shape[0], canny_output.shape[1], 3), dtype=np.uint8)  
     
-    while counter < 1000 and autoROI:   # take 1000 samples to define the ROI automatically
+    while counter < 1000 and autoROI.get():   # take 1000 samples to define the ROI automatically
         counter += 1
         minX = 0
         minY = 0    
@@ -289,7 +397,8 @@ while True:
                 y2 = maxY + 5
                 x1 = minX
                 x2 = maxX + 5
-                print(y, x, h, w, y1, y2, x1, x2)
+                if debugMode.get():
+                    print(y, x, h, w, y1, y2, x1, x2)
                 cv2.imshow('Contours', drawing)
 
     if y1==None:
@@ -304,26 +413,33 @@ while True:
         roi = whitebkg
         resized = cv2.rectangle(resized, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-    # Use pytesseract to recognize the numbers in the image - Default config --psm 11
-    #        config="--oem 3 --psm 8 -c tessedit_char_whitelist=.0123456789 textord_old_xheight=1 textord_min_xheight=40 textord_max_noise_size=18")
-    #        config="--oem 3 --psm 8 -c tessedit_char_whitelist=.0123456789")    
-    #        config="--oem 1 --psm 13 -c tessedit_char_whitelist=.0123456789") +-,.0123456789E
-    # numbers = pytesseract.image_to_string(thresh, lang="letsgodigital", \
+    numbers = pytesseract.image_to_string(roi, config=custom_oem)
 
-    numbers = pytesseract.image_to_string(roi, lang="train", config="--dpi 300 --oem 3 --psm 13 -c tessedit_char_whitelist=.0123456789")
-    numbers = numbers.replace(".", "")
-    numbers = numbers.replace(" ", "")
+    #numbers = numbers.replace(".", "")
+    #numbers = numbers.replace(" ", "")
     numbers = numbers.replace("\n", "")
-    d = pytesseract.image_to_data(roi, lang="train", config="--dpi 300 --oem 3 --psm 13 -c tessedit_char_whitelist=.0123456789", output_type=Output.DICT)
-    print(d['conf'])
+
+    for char in config["POSTPROCESS"]['strip']:
+        numbers = numbers.replace(char, "")
+    
+    d = pytesseract.image_to_data(roi, config=custom_oem, output_type=Output.DICT)
+    
+    if debugMode.get():
+        print(numbers)
+        print(d['conf'])
     n_boxes = len(d['text'])
     for i in range(n_boxes):
         if int(d['conf'][i]) > 40 and numbers.isnumeric():
             (x, y, w, h) = (d['left'][i], d['top'][i], d['width'][i], d['height'][i])
             roi = cv2.rectangle(roi, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            fnumbers = numbers[:len(numbers)-1] + "." + numbers[-1:]
-            if float(fnumbers) > 30000.0 or float(fnumbers) < 520.0:
-                maxX = 0    # reset the ROI
+            if noDecimal.get():
+                fnumbers = numbers
+            else:
+                fnumbers = numbers[:len(numbers)-1] + "." + numbers[-1:]
+            if debugMode.get():
+                print(fnumbers)
+            if float(fnumbers) > 460000.0 or float(fnumbers) < 520.0:
+                maxX = 0    # Out of valid range ignore and reset the ROI
             else:
                 valid, band, mode = checkFreq(float(fnumbers))
                 if new_numbers != fnumbers and valid and percentage > 0.33:
@@ -331,43 +447,125 @@ while True:
                     new_band = band
                     new_mode = mode
                     tcp_numbers = fnumbers + "0"
-                    print( d['conf'], new_numbers, tcp_numbers)
-                    if snd2com:
+                    if debugMode.get():
+                        print( d['conf'], new_numbers, tcp_numbers)
+                    if snd2com.get():
                         send2commander("CmdSetFreq", "xcvrfreq", tcp_numbers)
                         send2commander("CmdSetMode", "1", mode)
-                    if snd2log:    
+                    if snd2log.get():    
                         send2log4om( "SetTxFrequency", "<Frequency>" + numbers + "00" + "</Frequency>")
                         send2log4om( "SetMode", "<Mode>" + mode + "</Mode>")
-                    if voice:
-                        synthesizer.say(new_numbers)
+                    if voice.get():
+                        synthesizer.say(new_numbers + " kilohertz")
                         synthesizer.runAndWait()                    
                         synthesizer.stop()
-
-    # Display the recognized numbers on the screen
-    cv2.putText(resized, new_numbers  + " KHz " + new_band + "m " + new_mode, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-
-    # cv2.imshow("Eroded", eroded)
-    cv2.imshow("Gray", gray)
-
-    cv2.imshow("Thresh", thresh)
-
-    cv2.imshow('ROI', roi)
-        
-    cv2.imshow("Resized", resized)
+    # end For loop
+                 
+    if debugMode.get():
+        # Display the recognized numbers on the screen
+        cv2.putText(resized, new_numbers  + " kHz " + new_band + " " + new_mode, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)    
+        # cv2.imshow("Eroded", eroded)
+        cv2.imshow("Gray", gray)
+        cv2.imshow("Thresh", thresh)
+        cv2.imshow('ROI', roi)
+        cv2.imshow("Resized", resized)
 
     lastKey = cv2.waitKey(1) & 0xFF
     if lastKey == ord('r'):
-        print("Reset...")
+        if debugMode.get():
+            print("Reset...")
         maxX = 0
         counter = 0
         ROIset = False
-
+    if lastKey == ord('s'):
+        if debugMode.get():
+            print("Set ROI...")
+        ROIset = False        
+        ready2set = True
     elif lastKey == ord('q'):
-        # Break the loop if the 'q' key is pressed    
-        break
+        # Stop the program if the 'q' key is pressed    
+        quit()
 
-# Release the webcam
-cap.release()
+    # /OCR code  ------------------------------------------------------------------------------------------
+    
+    cv2.putText(frame, new_numbers  + " kHz " + new_band + " " + new_mode, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    photo = ImageTk.PhotoImage(image=Image.fromarray(frame))
+    canvas.create_image(0, 0, image=photo, anchor=NW)
+    canvas.imgtk = photo    
+    
+    root.after(20,update)
 
-# Close all OpenCV windows
-cv2.destroyAllWindows()
+# End of Main code loop---------------------------------------------------------------------------------
+
+# Start the video capture
+cap = cv2.VideoCapture(0)
+
+# set the camera values
+#cap.set( 3, 640)
+#cap.set( 4, 480)
+#cap.set(cv2.CAP_PROP_FPS, 1)
+
+# initialize the global variables
+counter = 0
+numbers = ""
+new_numbers = ""
+
+new_band = ""
+new_mode = ""
+
+minX = None
+maxX = None
+minY = None
+maxY = None
+y1 = None
+y2 = None
+x1 = None
+x2 = None
+
+threshold = 255 # initial threshold        
+
+oldthresh = None
+percentage = 1
+ROIset = False
+ready2set = False
+
+# create white canvass
+whitebkg = np.zeros([200,300],dtype=np.uint8)
+
+#cv2.imshow('Single Channel Window', whitebkg)
+
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+#pytesseract.pytesseract.environ = ".\\"
+
+# Use pytesseract to recognize the numbers in the image
+# --oem 3 --psm 8 -c tessedit_char_whitelist=.0123456789
+# --oem 1 --psm 13 -c tessedit_char_whitelist=.0123456789
+# --oem 3 --psm 7 -c tessedit_char_whitelist=.0123456789
+# -l eng for FT-991A 
+# -l train for fluorescent and LCD 7 segment radios
+
+custom_oem = r"--oem 3 --psm 7 -l " + config.get("OCR","language") + " -c tessedit_char_whitelist=" + config.get("OCR","whitelist")
+
+def key_pressed(event):
+    global ROIset
+    global ready2set
+    if debugMode.get():
+        print("Key Pressed: " + event.char)
+
+    if event.char == 's':
+        if debugMode.get():
+            print("Event - Set ROI...")
+        ROIset = False
+        ready2set = True
+        autoROI.set(False)
+    elif event.char == 'q':
+        # Stop the program if the 'q' key is pressed
+        if debugMode.get():
+            print("Event - Quit...")
+        quit()
+
+root.bind("<Key>", key_pressed)
+
+update()
+root.mainloop()
