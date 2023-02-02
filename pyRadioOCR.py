@@ -39,7 +39,9 @@
 17. CAP_PROP_WHITE_BALANCE Currently unsupported
 18. CAP_PROP_RECTIFICATION Rectification flag for stereo cameras (note: only supported by DC1394 v 2.x backend currently)
 """
+
 from tkinter import *
+from tkinter.filedialog import askopenfile
 from PIL import Image, ImageTk
 import cv2
 import numpy as np
@@ -141,9 +143,18 @@ def increase_brightness(img, value=30):
     img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
     return img
 
+# Initialize the GUI ------------------------------------------------------------------------------------------
+root = Tk()
+root.geometry("850x600")
+root.title("pyRadioOCR v0.8.1a by VA3HDL")
+
+iniFile = askopenfile(mode='r')
+
 # Read the configuration
 config = configparser.ConfigParser()
-config.read("./config.ini")
+config.read(iniFile.name)
+
+root.title("pyRadioOCR v0.8.1a by VA3HDL - Config: " + iniFile.name)
 
 # Initialize the Voice engine
 synthesizer = pyttsx3.init()
@@ -153,11 +164,6 @@ if config.getboolean("VOICE", "enabled"):
     synthesizer.say(config.get("VOICE","welcome"))
     synthesizer.runAndWait() 
     synthesizer.stop()
-
-# Initialize the GUI ------------------------------------------------------------------------------------------
-root = Tk()
-root.geometry("850x600")
-root.title("pyRadioOCR v0.8.1a by VA3HDL")
 
 right_frame = Frame(root,  width=200,  height=480,  bg='grey')
 right_frame.pack(side='right',  fill='both',  padx=5,  pady=5,  expand=True, anchor=E)
@@ -178,59 +184,49 @@ lft_col2.pack(side='right',  fill='both',  padx=5,  pady=5,  expand=True)
 def on_select(v):    
     print(v)
     if not debugMode.get():
-        cv2.destroyWindow("Webcam")
-        cv2.destroyWindow("Gray")
-        cv2.destroyWindow("Thresh")
-        cv2.destroyWindow('ROI')
-        cv2.destroyWindow("Resized")
+        cv2.destroyAllWindows()
+        canvas.delete("all")
 
 # Checkboxes
 snd2com = BooleanVar()
 snd2com.set(config.getboolean("INTEGRATION", "commander"))
 c1 = Checkbutton(lft_col1, text="Commander", variable=snd2com, command=lambda: on_select(snd2com.get()))
-#c1.pack(anchor=NW)
+
 c1.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 snd2log = BooleanVar()
 snd2log.set(config.getboolean("INTEGRATION", "log4om"))
 c2 = Checkbutton(lft_col1, text="Log4OM", variable=snd2log, command=lambda: on_select(snd2log.get()))
-#c2.pack(anchor=NW)
 c2.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 voice = BooleanVar()
 voice.set(config.getboolean("VOICE", "enabled"))
 c3 = Checkbutton(lft_col1, text="Voice", variable=voice, command=lambda: on_select(voice.get()))
-#c3.pack(anchor=NW)
 c3.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 autoROI = BooleanVar()
 autoROI.set(config.getboolean("PREPROCESS", "autoROI"))
 c4 = Checkbutton(lft_col1, text="Auto ROI", variable=autoROI, command=lambda: on_select(autoROI.get()))
-#c4.pack(anchor=NW)
 c4.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 invert = BooleanVar()
 invert.set(config.getboolean("PREPROCESS", "invert"))
 c5 = Checkbutton(lft_col2, text="Invert", variable=invert, command=lambda: on_select(invert.get()))
-#c5.pack(anchor=NE)
 c5.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 noDecimal = BooleanVar()
 noDecimal.set(config.getboolean("POSTPROCESS", "noDecimal"))
 c6 = Checkbutton(lft_col2, text="No decimals", variable=noDecimal, command=lambda: on_select(noDecimal.get()))
-#c6.pack(anchor=NE)
 c6.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 debugMode = BooleanVar()
 debugMode.set(config.getboolean("OCR", "debug"))
 c7 = Checkbutton(lft_col2, text="Debug mode", variable=debugMode, command=lambda: on_select(debugMode.get()))
-#c7.pack(anchor=NE)
 c7.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 rotate180 = BooleanVar()
 rotate180.set(config.getboolean("PREPROCESS", "rotate180"))
 c8 = Checkbutton(lft_col2, text="Rotate 180 deg", variable=rotate180, command=lambda: on_select(rotate180.get()))
-#c8.pack(anchor=NE)
 c8.pack(side=TOP, fill=NONE, expand=FALSE, anchor=NW)
 
 # Sliders
@@ -238,7 +234,7 @@ brightCam = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal',
 brightCam.pack(anchor=NE)
 brightCam.set(config.get("CAMERA", "brightness"))
 
-exposureSet = Scale(right_frame, from_=0, to=-14, length=200, orient='horizontal', label="Exposure")
+exposureSet = Scale(right_frame, from_=0, to=-14, length=200, orient='horizontal', label="Cam Exposure")
 exposureSet.pack(anchor=NE)
 exposureSet.set(config.get("CAMERA", "exposure"))
 
@@ -250,13 +246,25 @@ threshSet = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal',
 threshSet.pack(anchor=NE)
 threshSet.set(config.get("PREPROCESS", "threshold"))
 
-brightSet = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal', label="Preproc Brightness")
+brightSet = Scale(right_frame, from_=0, to=255, length=200, orient='horizontal', label="Brightness correction")
 brightSet.pack(anchor=NE)
 brightSet.set(config.get("PREPROCESS", "brightness"))
 
-scaleSet = Scale(right_frame, from_=0, to=500, length=200, orient='horizontal', label="Scale %")
+scaleSet = Scale(right_frame, from_=0, to=500, length=200, orient='horizontal', label="ROI Scale %")
 scaleSet.pack(anchor=NE)
 scaleSet.set(config.get("PREPROCESS", "scale"))
+
+confiden = Scale(right_frame, from_=0, to=100, length=200, orient='horizontal', label="Confidence %")
+confiden.pack(anchor=NE)
+confiden.set(config.get("OCR", "confidence"))
+
+frmDelta = Scale(right_frame, from_= 0.00, to= 1.00, digits = 4, resolution = 0.001, length=200, orient='horizontal', label="Frame Delta %")
+frmDelta.pack(anchor=NE)
+frmDelta.set(config.get("OCR", "framedelta"))
+
+volume = Scale(right_frame, from_= 0.00, to= 1.00, digits = 3, resolution = 0.01, length=200, orient='horizontal', label="Voice Volume")
+volume.pack(anchor=NE)
+volume.set(config.get("VOICE", "volume"))
 
 # /GUI ------------------------------------------------------------------------------------------
 
@@ -295,9 +303,7 @@ def update():
     # OCR code  ------------------------------------------------------------------------------------------
     img = frame
     height, width, _ = img.shape
-
-    #img = img[200:height-200, 250:width-200]
-
+    
     if debugMode.get():
         cv2.imshow("Webcam", img)
 
@@ -389,12 +395,10 @@ def update():
         minY = 0    
         maxY = 0
         height, width = thresh.shape
-        # roi = thresh
+        
         for i in range(len(contours)):
-            x, y, w, h = cv2.boundingRect(contours_poly[i])
-            # if h > 40 and w > 10:  # 320x160
-            if h > 22 and w > 10 and w < 20:
-                #counter += 1
+            x, y, w, h = cv2.boundingRect(contours_poly[i])            
+            if h > 22 and w > 10 and w < 20:                
                 cv2.drawContours(drawing, contours_poly, i, (0, 255, 0))
                 cv2.rectangle(drawing, (x, y), (x+w, y+h), (0, 0, 255), 2)
                 minX = min(minX, x)
@@ -432,11 +436,11 @@ def update():
     d = pytesseract.image_to_data(roi, config=custom_oem, output_type=Output.DICT)
     
     if debugMode.get():
-        print(numbers)
-        print(d['conf'])
+        print(numbers, end=" ")
+        print(d['conf'], end=" ")
     n_boxes = len(d['text'])
     for i in range(n_boxes):
-        if int(d['conf'][i]) > 40 and numbers.isnumeric():
+        if int(d['conf'][i]) > int(confiden.get()) and numbers.isnumeric():
             (x, y, w, h) = (d['left'][i], d['top'][i], d['width'][i], d['height'][i])
             roi = cv2.rectangle(roi, (x, y), (x + w, y + h), (0, 255, 0), 2)
             if noDecimal.get():
@@ -446,18 +450,18 @@ def update():
                 fnumbers = numbers[:len(numbers)-1] + "." + numbers[-1:]
                 log4omDec = "00"
             if debugMode.get():
-                print(fnumbers)
+                print(fnumbers, end=" ")
             if float(fnumbers) > 460000.0 or float(fnumbers) < 520.0:
                 maxX = 0    # Out of valid range ignore and reset the ROI
             else:
                 valid, band, mode = checkFreq(float(fnumbers))
-                if new_numbers != fnumbers and valid and percentage > 0.33:
+                if (new_numbers != fnumbers) and valid and (percentage > frmDelta.get()):
                     new_numbers = fnumbers
                     new_band = band
                     new_mode = mode
                     tcp_numbers = fnumbers + "0"
                     if debugMode.get():
-                        print( d['conf'], new_numbers, tcp_numbers)
+                        print(d['conf'], new_numbers, tcp_numbers,end=" ")
                     if snd2com.get():
                         send2commander("CmdSetFreq", "xcvrfreq", tcp_numbers)
                         send2commander("CmdSetMode", "1", mode)
@@ -465,6 +469,7 @@ def update():
                         send2log4om( "SetTxFrequency", "<Frequency>" + numbers + log4omDec + "</Frequency>")
                         send2log4om( "SetMode", "<Mode>" + mode + "</Mode>")
                     if voice.get():
+                        synthesizer.setProperty("volume", volume.get())
                         synthesizer.say(new_numbers + " kilohertz")
                         synthesizer.runAndWait()                    
                         synthesizer.stop()
@@ -498,12 +503,40 @@ def update():
     # /OCR code  ------------------------------------------------------------------------------------------
     if rotate180.get():
         frame = cv2.rotate(frame, cv2.ROTATE_180)
+
     cv2.putText(frame, new_numbers  + " kHz " + new_band + " " + new_mode, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+    
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     photo = ImageTk.PhotoImage(image=Image.fromarray(frame))
     canvas.create_image(0, 0, image=photo, anchor=NW)
     canvas.imgtk = photo    
-    
+
+    if debugMode.get():
+        options = ">>> Editable parameters from GUI: "
+        options += "\nVOICE enabled........: " + str(voice.get())
+        options += "\nVOICE Volume.........: " + str(volume.get())
+        options += "\nINTEGRATION commander: " + str(snd2com.get())
+        options += "\nINTEGRATION log4om...: " + str(snd2log.get())
+        options += "\nPREPROCESS autoROI...: " + str(autoROI.get())
+        options += "\nPREPROCESS invert....: " + str(invert.get())
+        options += "\nPOSTPROCESS noDecimal: " + str(noDecimal.get())
+        options += "\nOCR debug............: " + str(debugMode.get())
+        options += "\nOCR confidence.......: " + str(confiden.get())
+        options += "\nOCR framedelta.......: " + str(frmDelta.get())
+        options += "\nCAMERA brightness....: " + str(brightCam.get())
+        options += "\nCAMERA exposure......: " + str(exposureSet.get())
+        options += "\nPREPROCESS slant.....: " + str(slantSet.get())
+        options += "\nPREPROCESS threshold.: " + str(threshSet.get())
+        options += "\nPREPROCESS brightness: " + str(brightSet.get())
+        options += "\nPREPROCESS scale.....: " + str(scaleSet.get())
+        options += "\nPREPROCESS rotate180.: " + str(rotate180.get())
+
+        y0, dy = 480-18*18, 18
+        for i, line in enumerate(options.split('\n')):
+            y = y0 + i*dy            
+            # cv2.putText(frame, line, (5, y), cv2.FONT_HERSHEY_PLAIN, 1.00, (0, 0, 255), 1)
+            canvas.create_text(15, y, text=line, fill="white", font=('Consolas 8'), anchor=NW)
+
     root.after(20,update)
 
 # End of Main code loop---------------------------------------------------------------------------------
@@ -542,9 +575,11 @@ ready2set = False
 
 # create white canvass
 scaleInt = int(config.getint("PREPROCESS", "scale")/100)
-whitebkg = np.zeros([config.getint("CAMERA", "frame_height")*scaleInt,
-                     config.getint("CAMERA", "frame_width")*scaleInt],
-                     dtype=np.uint8)
+#whitebkg = np.zeros([config.getint("CAMERA", "frame_height")*scaleInt,
+#                     config.getint("CAMERA", "frame_width")*scaleInt],
+#                     dtype=np.uint8)
+
+whitebkg = np.zeros([200,320],dtype=np.uint8)
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -562,15 +597,23 @@ def key_pressed(event):
         ROIset = False
         ready2set = True
         autoROI.set(False)
+    elif event.char == 'a':
+        synthesizer.setProperty("volume", volume.get())
+        synthesizer.say(new_numbers + " kilohertz")
+        synthesizer.runAndWait()                    
+        synthesizer.stop()
     elif event.char == 'q' or ord(event.char) == 27:
         # Stop the program if the 'q' key is pressed
         config.set("VOICE", "enabled", str(voice.get()))
+        config.set("VOICE", "volume", str(volume.get()))
         config.set("INTEGRATION", "commander", str(snd2com.get()))
         config.set("INTEGRATION", "log4om", str(snd2log.get()))
         config.set("PREPROCESS", "autoROI", str(autoROI.get()))
         config.set("PREPROCESS", "invert", str(invert.get()))
         config.set("POSTPROCESS", "noDecimal", str(noDecimal.get()))
         config.set("OCR", "debug", str(debugMode.get()))
+        config.set("OCR", "confidence", str(confiden.get()))
+        config.set("OCR", "framedelta", str(frmDelta.get()))
         config.set("CAMERA", "brightness", str(brightCam.get()))
         config.set("CAMERA", "exposure", str(exposureSet.get()))
         config.set("PREPROCESS", "slant", str(slantSet.get()))
@@ -579,7 +622,7 @@ def key_pressed(event):
         config.set("PREPROCESS", "scale", str(scaleSet.get()))
         config.set("PREPROCESS", "rotate180", str(rotate180.get()))
 
-        with open('./config.ini', 'w') as configfile:
+        with open(iniFile.name, 'w') as configfile:
             config.write(configfile)
         if debugMode.get():            
             print("Event - Quit...")
