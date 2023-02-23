@@ -1,5 +1,5 @@
 # -------------------------------------------------------------
-# pyRadioOCR v0.8.1a
+# pyRadioOCR v0.8.1b
 #
 # https://youtu.be/FJd5-t7Id1A
 #
@@ -336,10 +336,13 @@ def update():
         # Select ROI
         r = cv2.selectROI("Select the ROI area", resized)
              
-        y1 = int( r[1])
+        y1 = int(r[1])
         y2 = int(r[1]+r[3])
         x1 = int(r[0])
-        x2 = int(r[0]+r[2])                
+        x2 = int(r[0]+r[2])      
+
+        # Create white background canvas for OCR
+        whitebkg = np.zeros([(y2-y1)*2,(x2-x1)*2],dtype=np.uint8)
 
         # Display cropped image
         cv2.imshow("Cropped image", resized[y1:y2,x1:x2])
@@ -423,7 +426,7 @@ def update():
         roiH, roiW = roi.shape
         yoff = round((bkgH-roiH)/2)
         xoff = round((bkgW-roiW)/2)
-        whitebkg[yoff:yoff+roiH, xoff:xoff+roiW] = roi        
+        whitebkg[yoff:yoff+roiH, xoff:xoff+roiW] = roi
         roi = whitebkg
         resized = cv2.rectangle(resized, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
@@ -574,12 +577,12 @@ ROIset = False
 ready2set = False
 
 # create white canvass
-scaleInt = int(config.getint("PREPROCESS", "scale")/100)
+#scaleInt = int(config.getint("PREPROCESS", "scale")/100)
 #whitebkg = np.zeros([config.getint("CAMERA", "frame_height")*scaleInt,
 #                     config.getint("CAMERA", "frame_width")*scaleInt],
 #                     dtype=np.uint8)
 
-whitebkg = np.zeros([200,320],dtype=np.uint8)
+#whitebkg = np.zeros([200,320],dtype=np.uint8)
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 

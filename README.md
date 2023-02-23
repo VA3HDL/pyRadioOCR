@@ -13,8 +13,8 @@ Details in this video https://youtu.be/FJd5-t7Id1A
 
 First version of the GUI
 
-![CAT Configuration](https://github.com/VA3HDL/pyRadioOCR/blob/main/GUI.jpg)
+![CAT Configuration](https://github.com/VA3HDL/pyRadioOCR/blob/main/Images/GUI.jpg)
 
 Updated version of the GUI, testing a very old Logitech webcam max res is 352x288 and still produce great results
 
-![CAT Configuration](https://github.com/VA3HDL/pyRadioOCR/blob/main/GUI_352x288.jpg)
+![CAT Configuration](https://github.com/VA3HDL/pyRadioOCR/blob/main/Images/GUI_352x288.jpg)
