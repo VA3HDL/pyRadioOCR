@@ -11,6 +11,8 @@ Major dependencies and versions:
 
 Details in this video https://youtu.be/FJd5-t7Id1A
 
+![Windows release files](https://github.com/VA3HDL/pyRadioOCR/releases/tag/v0.8.1b)
+
 First version of the GUI
 
 ![CAT Configuration](https://github.com/VA3HDL/pyRadioOCR/blob/main/Images/GUI.jpg)
